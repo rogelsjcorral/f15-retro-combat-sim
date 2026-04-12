@@ -43,6 +43,16 @@ Both versions share the same core simulation model.
 
 ---------------------------------------------------------------------
 
+## VERSION STATUS
+
+- Python Version: v1.0  
+- C++ Version: v1.1  
+
+v1.1 focuses on control stability, input handling, and timing accuracy.
+v1.2 will focus on physics model improvements.
+
+---------------------------------------------------------------------
+
 QUICK START
 
 PYTHON VERSION:
