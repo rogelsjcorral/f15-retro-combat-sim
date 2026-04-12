@@ -1,0 +1,625 @@
+# F-15 STRIKE EAGLE SIMULATOR v1.0
+## DOS-Style Combat Flight Simulator
+### Documentation & Modding Guide
+
+---
+
+## TABLE OF CONTENTS
+1. Quick Start
+2. Game Architecture
+3. Flight Physics Model
+4. Control Scheme
+5. Weapons System
+6. Modding Guide
+7. Technical Reference
+
+---
+
+## QUICK START
+
+### Installation
+```
+1. Ensure Python 3.8+ is installed on Windows 11
+2. Copy f15_simulator.py to any folder
+3. Open Command Prompt or PowerShell
+4. Navigate to the folder
+5. Run: python f15_simulator.py
+```
+
+### First Flight
+- Press 'S' at main menu to START NEW GAME
+- Read the mission briefing
+- Press SPACE to begin flight
+- Use arrow keys (or WASD) to control the aircraft
+- Press 'R' to see radar display
+- Press 'P' to pause and review mission score
+
+---
+
+## GAME ARCHITECTURE
+
+### Core Components
+
+```
+GameState
+├── Aircraft (player)
+├── Contacts[] (enemies, SAMs, friendlies)
+├── Missiles[] (active weapons)
+├── Terrain (elevation grid)
+└── Mission data
+
+PhysicsEngine
+├── update_aircraft() - flight dynamics
+├── update_contacts() - AI behavior
+└── collision detection
+
+RenderEngine
+├── render_screen() - main dispatcher
+├── render_in_flight() - HUD view
+├── render_radar_screen() - tactical display
+└── render_main_menu() - UI
+
+InputHandler
+└── handle_input() - keyboard control
+
+MainLoop
+├── 50ms tick rate (~20 FPS, authentic DOS feel)
+├── Physics simulation
+├── Input processing
+└── Screen rendering
+```
+
+### Data Flow Per Frame
+```
+1. INPUT → Player presses key
+2. PHYSICS → Aircraft position/velocity updated
+3. AI → Contacts update their behavior
+4. COLLISION → Check for impacts, SAM launches
+5. RENDER → Draw current state to screen
+6. FRAME DELAY → Wait until next tick
+```
+
+---
+
+## FLIGHT PHYSICS MODEL
+
+### Overview
+The flight model is inspired by F-15 Strike Eagle II's arcade-realistic balance:
+- Realistic enough to feel like flying
+- Accessible enough to not require a manual
+- Simplified enough to run smoothly on DOS-era hardware
+
+### Key Parameters (in /home/claude/f15_simulator.py)
+
+```python
+# Speed envelope (in knots)
+MIN_SPEED = 150         # Below = stall
+MAX_SPEED = 950         # Max level flight
+CRUISE_SPEED = 450      # Economical cruise
+STALL_SPEED = 140       # Hard stall point
+
+# Altitude limits (in feet)
+MIN_ALTITUDE = 0
+MAX_ALTITUDE = 50000
+CLIMB_CEILING = 45000   # Service ceiling
+
+# Physics constants
+DRAG_COEFFICIENT = 0.08         # Air resistance
+THRUST_RESPONSE = 2.0           # Accel/decel rate
+G_LIMIT = 8.0                   # Max safe G forces
+TURN_RADIUS_FACTOR = 0.015      # Bank angle effect
+```
+
+### Aircraft State Variables
+
+The Aircraft dataclass contains:
+
+**Position & Motion**
+```python
+position: Vector3           # x, y (altitude), z in meters
+velocity: Vector3           # vx, vy, vz in m/s
+pitch: float                # -90 (down) to +90 (up) degrees
+roll: float                 # -180 to +180 degrees
+heading: float              # 0-360 degrees (compass)
+throttle: float             # 0.0 (idle) to 1.0 (full)
+```
+
+**Instrument Readings**
+```python
+g_force: float              # G-forces currently experienced
+on_ground: bool             # Is aircraft on terrain?
+damaged: bool               # Has taken battle damage?
+damage_level: float         # 0.0 (healthy) to 1.0 (destroyed)
+```
+
+### Flight Model Equations
+
+#### 1. SPEED ENVELOPE
+
+Current speed is determined by throttle setting and drag:
+
+```python
+def update_speed(current_speed, target_speed, dt):
+    if current_speed < target_speed:
+        # Accelerating
+        current_speed += THRUST_RESPONSE * dt
+    else:
+        # Decelerating (drag)
+        current_speed -= DRAG_COEFFICIENT * (current_speed - target_speed) * dt
+    return current_speed
+```
+
+- **Throttle 0%** = 50 m/s (~97 knots) - minimum
+- **Throttle 50%** = ~200 m/s (~388 knots) - cruise
+- **Throttle 100%** = 250 m/s (~486 knots) - max sustainable
+
+**Why?** Real F-15E has rated max of 950+ knots, but we cap at 486 to keep physics stable and prevent overspeed damage risk.
+
+#### 2. STALLING
+
+When airspeed drops below STALL_SPEED (140 knots), the aircraft becomes unstable:
+
+```python
+if aircraft.is_stalled():
+    # Nose drops automatically
+    aircraft.pitch = max(aircraft.pitch - 5, -45)
+```
+
+**Recovery:** Increase throttle and point nose down to regain airspeed.
+
+#### 3. VERTICAL MOVEMENT (CLIMB/DESCENT)
+
+Pitch angle controls vertical velocity:
+
+```python
+pitch_rad = math.radians(aircraft.pitch)
+vertical_accel = math.sin(pitch_rad) * 9.81  # m/s²
+```
+
+- **Pitch +45°** = maximum climb rate
+- **Pitch 0°** = level flight (slight drift due to gravity)
+- **Pitch -45°** = maximum descent rate
+
+Rate of climb is affected by current airspeed (faster = better climb).
+
+#### 4. TURNING (BANKING)
+
+Roll angle determines turn rate:
+
+```python
+roll_rad = math.radians(aircraft.roll)
+turn_rate = math.sin(roll_rad) * TURN_RADIUS_FACTOR * current_velocity_mag
+aircraft.heading += turn_rate * dt
+```
+
+- **Roll ±45°** = tight turn (requires careful speed/G management)
+- **Roll ±90°** = maximum turn rate
+- **Roll 0°** = no turn
+
+**G-Forces during turn:**
+```
+G_force ≈ 1.0 + (turn_rate² + climb_accel²) / 9.81
+```
+
+When G > 8.0 (G_LIMIT), aircraft takes damage:
+
+```python
+if aircraft.g_force > G_LIMIT:
+    aircraft.damage_level += 0.01 * (aircraft.g_force - G_LIMIT)
+```
+
+#### 5. TERRAIN COLLISION
+
+Terrain elevation is calculated from Gaussian peaks (mountains):
+
+```python
+def get_elevation(x, z):
+    mountain_1 = 200 * exp(-((x-5000)² + (z-5000)²) / 5000000)
+    mountain_2 = 150 * exp(-((x-15000)² + (z-10000)²) / 8000000)
+    return mountain_1 + mountain_2
+```
+
+Aircraft safety boundary: position.y > terrain_elevation + 100m
+
+If collided, aircraft is bumped up 100m automatically (crash avoidance).
+
+#### 6. DAMAGE ACCUMULATION
+
+Aircraft damage comes from three sources:
+
+**A. Excessive G-forces** (dogfight damage)
+```python
+if g_force > 8.0:
+    damage_level += 0.01 * (g_force - 8.0) per frame
+```
+
+**B. Overspeed** (structural stress)
+```python
+if current_speed > MAX_SPEED * 1.1:
+    damage_level += 0.005 per frame
+```
+
+**C. Collision** (not yet implemented - add in your mod!)
+
+**Effect:** Aircraft becomes "damaged" when damage_level > 0, affecting handling.
+
+---
+
+## CONTROL SCHEME
+
+### Pitch (Vertical)
+```
+[↑] or [W]  - Pitch UP (nose up, climb)
+[↓] or [S]  - Pitch DOWN (nose down, descend)
+Range: -90° (vertical dive) to +90° (vertical climb)
+Increment: ±2° per keystroke
+```
+
+### Roll (Banking)
+```
+[←] - Roll LEFT
+[→] - Roll RIGHT
+Range: -90° (left bank) to +90° (right bank)
+Increment: ±3° per keystroke
+Auto-recover to 0° (level wings) - not yet implemented
+```
+
+### Throttle
+```
+[W] - INCREASE THROTTLE (while in flight)
+[S] - DECREASE THROTTLE (while in flight)
+Range: 0.0 (idle) to 1.0 (full)
+Increment: ±0.05 per keystroke
+Note: Conflicts with pitch control! Use arrow keys for pitch in actual game.
+```
+
+### Weapons
+```
+[F]  - FIRE CANNON (M61 Vulcan, 20mm)
+[L]  - LOCK ON TARGET (cycle through contacts)
+[M]  - CYCLE WEAPON (future: select missile type)
+```
+
+### Views
+```
+[R]  - RADAR VIEW (tactical display)
+[G]  - GUN SIGHT (future: zoom view)
+[I]  - INSTRUMENTS (future: detailed gauges)
+```
+
+### Flight Control
+```
+[SPACE]  - AIR BRAKE (future: speed brake)
+[P]      - PAUSE FLIGHT
+[Q]      - EJECT / QUIT MISSION
+```
+
+### Navigation
+```
+[H]  - HEADING BUG (future: set target heading)
+[T]  - TOGGLE AUTOPILOT (future: auto-hold altitude)
+```
+
+---
+
+## WEAPONS SYSTEM
+
+### Aircraft Loadout
+
+Each aircraft spawns with:
+
+```
+M61 Vulcan Cannon
+├─ 500 rounds
+├─ Rate: 6000 RPM
+├─ Effective range: 3000 feet
+└─ Always available
+
+AIM-9 Sidewinder (Heat-seeker)
+├─ 4 missiles
+├─ Requires no lock-on
+├─ Range: ~20 nm
+└─ Good vs fighters at close range
+
+AIM-7 Sparrow (Radar missile)
+├─ 4 missiles
+├─ Requires radar lock
+├─ Range: ~40 nm
+└─ Best vs distant targets
+
+AGM-65 Maverick (Air-to-ground)
+├─ 8 missiles
+├─ Requires visual/radar target
+├─ Range: ~15 nm
+└─ For SAMs and ground targets
+
+Mk82 Dumb Bombs
+├─ 12 bombs (500 lb each)
+├─ No targeting required
+├─ Must drop at low altitude
+└─ Heavy blast radius
+```
+
+### Firing Weapons
+
+**Cannon:**
+```python
+if [F] pressed:
+    if aircraft.cannon_ammo > 0:
+        aircraft.cannon_ammo -= 10
+        # Create 10 rounds of fire
+        missile = Missile(
+            weapon_type=WeaponType.CANNON,
+            position=aircraft.position,
+            velocity=aircraft.velocity,
+            target=selected_contact,
+            time_to_impact=2.0  # 2 seconds to impact area
+        )
+        state.missiles.append(missile)
+```
+
+**Missiles (future implementation):**
+```python
+if [L] pressed and selected_contact exists:
+    if aircraft.missiles_heat > 0:
+        # Fire sidewinder at locked contact
+        aircraft.missiles_heat -= 1
+```
+
+---
+
+## MODDING GUIDE
+
+### Easy Mods (No Physics Knowledge Required)
+
+#### 1. Change Aircraft Speed
+In `CONSTANTS & CONFIGURATION` section:
+
+```python
+MIN_SPEED = 150      # ← Change this (50-200 knots)
+MAX_SPEED = 950      # ← Increase for faster plane
+CRUISE_SPEED = 450   # ← Change cruising preference
+```
+
+**Effect:** Aircraft will accelerate faster to new MAX_SPEED.
+
+#### 2. Add More Enemies
+In `GameState._spawn_initial_contacts()`:
+
+```python
+# Current: random.randint(4, 6) enemies
+# Change to:
+for i in range(random.randint(8, 12)):  # More bandits!
+```
+
+#### 3. Change Starting Altitude
+In `GameState.__init__()`:
+
+```python
+aircraft = Aircraft(
+    position=Vector3(0, 2000, 0),  # ← y = altitude in meters
+    # 2000m = ~6500 ft. Try 5000 for 16,400 ft high-altitude start
+```
+
+#### 4. Modify Starting Loadout
+In `Aircraft` dataclass initialization:
+
+```python
+cannon_ammo: int = 500      # ← Change to 1000
+missiles_heat: int = 4      # ← Change to 8
+missiles_radar: int = 4     # ← Change to 12
+```
+
+#### 5. Make Plane Tougher
+In `CONSTANTS & CONFIGURATION`:
+
+```python
+G_LIMIT = 8.0  # ← Change to 12.0 (more G's before damage)
+```
+
+### Medium Mods (Need Physics Understanding)
+
+#### 1. Change Turn Rate
+
+In `PhysicsEngine.update_aircraft()`:
+
+```python
+TURN_RADIUS_FACTOR = 0.015  # ← Increase to 0.025 (tighter turns)
+```
+
+**Explanation:** This multiplies your bank angle × speed to get turn rate. Higher = sharper turns.
+
+#### 2. Add Terrain Mountains
+
+In `Terrain.get_elevation()`:
+
+```python
+def get_elevation(self, x: float, z: float) -> float:
+    # Add a new mountain!
+    mountain_3 = 300 * math.exp(-((x-30000)**2 + (z-8000)**2) / 6000000)
+    return mountain_1 + mountain_2 + mountain_3  # ← Add mountain_3
+```
+
+#### 3. Customize Weapon Damage
+
+In `PhysicsEngine.update_aircraft()`, add missile impact detection:
+
+```python
+# After updating missiles, check for hits:
+for missile in state.missiles:
+    for contact in state.contacts:
+        distance = missile.position.distance_to(contact.position)
+        if distance < 500:  # Within 500 meters
+            contact.threat_level -= 2  # Damaged enemy
+            state.missiles.remove(missile)
+            break
+```
+
+### Advanced Mods (Full Physics Model Changes)
+
+#### 1. Realistic Stall Behavior
+
+Current stall is too simple. Make it realistic:
+
+```python
+class AirfoilState:
+    def __init__(self):
+        self.angle_of_attack = 0.0  # AOA in degrees
+        self.is_stalled = False
+    
+    def update(self, pitch, velocity_vector):
+        # Calculate AOA from pitch and vertical velocity
+        vertical_component = velocity_vector.y / velocity_vector.magnitude()
+        self.angle_of_attack = math.degrees(math.asin(vertical_component))
+        
+        # Stall occurs at >15° AOA at slow speed
+        if self.angle_of_attack > 15 and velocity < 150:
+            self.is_stalled = True
+        elif velocity > 200:
+            self.is_stalled = False
+```
+
+#### 2. Implement Landing System
+
+Add landing physics:
+
+```python
+def update_landing(aircraft, terrain):
+    """Handle landing gear down, approach, touchdown"""
+    terrain_elev = terrain.get_elevation(aircraft.position.x, aircraft.position.z)
+    
+    if aircraft.position.y - terrain_elev < 50:  # Within 50m of ground
+        # Check landing conditions
+        if aircraft.current_speed() < 200 and aircraft.pitch < 0:
+            # Good landing setup
+            aircraft.on_ground = True
+            aircraft.velocity = Vector3(0, 0, 0)
+            return True
+        else:
+            # Crash!
+            aircraft.damage_level = 1.0
+            return False
+```
+
+#### 3. Add Wind Effects
+
+```python
+WIND_SPEED = 25  # knots
+WIND_DIRECTION = 270  # degrees
+
+def apply_wind(aircraft, wind_speed, wind_direction):
+    wind_rad = math.radians(wind_direction)
+    aircraft.velocity.x += math.cos(wind_rad) * wind_speed * 0.5
+    aircraft.velocity.z += math.sin(wind_rad) * wind_speed * 0.5
+```
+
+---
+
+## TECHNICAL REFERENCE
+
+### Vector3 Class
+
+Simple 3D vector math:
+
+```python
+v1 = Vector3(10, 20, 30)
+v2 = Vector3(1, 2, 3)
+
+# Operations
+magnitude = v1.magnitude()           # Length of vector
+normalized = v1.normalize()          # Unit vector
+dot_product = v1.dot(v2)            # Scalar
+v3 = v1 + v2                        # Vector addition
+v4 = v1 - v2                        # Vector subtraction
+v5 = v1 * 2.5                       # Scalar multiplication
+```
+
+### Enums & Types
+
+```python
+# Flight phases
+FlightPhase.MAIN_MENU
+FlightPhase.MISSION_BRIEFING
+FlightPhase.IN_FLIGHT
+FlightPhase.RADAR_SCREEN
+FlightPhase.LANDING
+FlightPhase.MISSION_RESULTS
+
+# Contact types
+ContactType.FRIENDLY_FIGHTER
+ContactType.ENEMY_FIGHTER
+ContactType.SAM_SITE
+ContactType.GROUND_TARGET
+ContactType.WAYPOINT
+
+# Weapon types
+WeaponType.CANNON
+WeaponType.AIM9_SIDEWINDER
+WeaponType.AIM7_SPARROW
+WeaponType.AGM65_MAVERICK
+WeaponType.MK82_BOMB
+```
+
+### Frame Rate & Timing
+
+```python
+GAME_TICK = 0.05        # 50 milliseconds
+FRAME_RATE = 1 / GAME_TICK  # ~20 FPS (authentic DOS feel)
+dt = time.time() - last_frame_time  # Delta time in seconds
+```
+
+All physics use `dt` for frame-rate independence.
+
+---
+
+## FUTURE ENHANCEMENTS
+
+Here's what you could add:
+
+- [ ] Missile guidance systems (heat seeker AI)
+- [ ] SAM site radar tracking
+- [ ] Autopilot modes (altitude hold, heading hold)
+- [ ] Damage effects (asymmetric handling, engine fire)
+- [ ] Landing system with touchdown physics
+- [ ] Fuel management
+- [ ] Ejection sequence
+- [ ] Multi-player (split screen)
+- [ ] Procedural mission generation
+- [ ] Persistent pilot career
+- [ ] Recorded demo playback
+- [ ] Sound effects (DOS beeper sounds!)
+
+---
+
+## TROUBLESHOOTING
+
+### "ModuleNotFoundError: No module named 'msvcrt'"
+This module is Windows-only. If running on macOS/Linux, comment out msvcrt and modify handle_input() to use input() instead.
+
+### Aircraft won't climb
+Check: throttle is at 100%, pitch is positive (45°), speed is above CRUISE_SPEED.
+
+### Game runs too fast/slow
+Adjust `GAME_TICK` constant. Currently 0.05 = 20 FPS. Try:
+- 0.033 for 30 FPS (faster)
+- 0.1 for 10 FPS (slower/choppier DOS feel)
+
+### Screen flickers
+Normal at 20 FPS. This is intentional to match DOS-era display update rates.
+
+---
+
+## CREDITS & LICENSE
+
+Inspired by MicroProse's F-15 Strike Eagle II (1989)
+Created as educational/preservation project
+
+You are free to modify and extend this code for personal use.
+
+---
+
+**Happy Flying!**
+
+---
+
+*Questions? Ideas? The entire source is commented and organized. Dive into f15_simulator.py and make it your own!*
