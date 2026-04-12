@@ -8,7 +8,7 @@ Python and C++ Versions Included
 
 COPYRIGHT
 
-Copyright (c) 2026 Rogel S.J. Corral.
+Copyright (c) 2026 Rogel S.J. Corral.  
 Licensed under the MIT License.
 
 This project is distributed for educational and modification purposes.
@@ -202,5 +202,5 @@ Only structure, discipline, and a clear model.
 
 ---------------------------------------------------------------------
 
-Copyright (c) 2026 Rogel S.J. Corral.
+Copyright (c) 2026 Rogel S.J. Corral.  
 Licensed under the MIT License.
