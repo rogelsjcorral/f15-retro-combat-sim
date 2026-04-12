@@ -1,10 +1,23 @@
 ╔════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                                ║
-║              F-15 STRIKE EAGLE SIMULATOR v1.0 - COMPLETE PACKAGE               ║
+║              F-15 STRIKE EAGLE SIMULATOR PACKAGE                               ║
 ║                                                                                ║
-║                        Both Python & C++ Versions Included                     ║
+║                 Python Version: v1.0                                           ║
+║                 C++ Version:    v1.1                                           ║
 ║                                                                                ║
 ╚════════════════════════════════════════════════════════════════════════════════╝
+
+LATEST UPDATE
+═════════════════════════════════════════════════════════════════════════════════
+
+C++ VERSION v1.1:
+  • True pause system
+  • Smooth held controls
+  • Input debounce fixes
+  • Accurate mission timing
+  • Radar lock indicator
+
+Python version remains at v1.0 (unchanged).
 
 PACKAGE CONTENTS
 ════════════════════════════════════════════════════════════════════════════════
