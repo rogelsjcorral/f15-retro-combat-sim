@@ -28,6 +28,7 @@
 #include <ctime>
 #include <algorithm>
 #include <cstdarg>
+#include <cctype>
 
 // ============================================================================
 // CONSTANTS & CONFIGURATION
@@ -65,7 +66,8 @@ enum FlightPhase {
     RADAR_SCREEN = 3,
     LANDING = 4,
     MISSION_RESULTS = 5,
-    GAME_OVER = 6
+    GAME_OVER = 6,
+    PAUSED = 7
 };
 
 enum ContactType {
@@ -191,7 +193,7 @@ struct GameState {
     Terrain terrain;
     Contact contacts[20];
     int contact_count;
-    int time_in_flight;
+    float time_in_flight;
     int mission_score;
     int radar_contacts_destroyed;
     int current_mission;
@@ -526,12 +528,24 @@ void renderRadarScreen(const GameState& state) {
         Vector3 delta = c.position - state.aircraft.position;
         float distance = delta.magnitude() * 0.000539957f;  // meters to nm
         
-        printAt(1, 14+i, "║ %s %s %6.1f nm  ALT %5.0f ft  TGT:%d                                      ║",
-                type_char, type_char, distance, c.altitude, c.threat_level);
+        printAt(1, 14+i, "║ %s %s %6.1f nm  ALT %5.0f ft  TGT:%d  %s                               ║",
+        type_char, type_char, distance, c.altitude, c.threat_level,
+        c.locked ? "LOCK" : "----");
     }
     
     printAt(1, 22, "║ [R] RETURN  [L] LOCK  [F] FIRE  [Q] QUIT                                      ║");
     printAt(1, 23, "╚════════════════════════════════════════════════════════════════════════════════╝");
+}
+
+void renderPaused() {
+    clearScreen();
+
+    printAt(1, 8,  "╔══════════════════════════════════════╗");
+    printAt(1, 9,  "║               PAUSED                 ║");
+    printAt(1, 10, "║                                      ║");
+    printAt(1, 11, "║   [P] RESUME FLIGHT                  ║");
+    printAt(1, 12, "║   [Q] END MISSION                    ║");
+    printAt(1, 13, "╚══════════════════════════════════════╝");
 }
 
 void renderMissionResults(const GameState& state) {
@@ -541,7 +555,7 @@ void renderMissionResults(const GameState& state) {
     printAt(1, 1,  "║                         MISSION DEBRIEF                                        ║");
     printAt(1, 2,  "╠════════════════════════════════════════════════════════════════════════════════╣");
     printAt(1, 3,  "║                                                                                ║");
-    printAt(1, 4,  "║ TIME IN FLIGHT: %6d seconds                                                  ║", state.time_in_flight);
+    printAt(1, 4,  "║ TIME IN FLIGHT: %6.1f seconds                                                ║", state.time_in_flight);
     printAt(1, 5,  "║ CONTACTS DESTROYED: %d                                                        ║", state.radar_contacts_destroyed);
     printAt(1, 6,  "║ MISSION SCORE: %d                                                             ║", state.mission_score);
     printAt(1, 7,  "║                                                                                ║");
@@ -564,6 +578,9 @@ void renderScreen(const GameState& state) {
         case RADAR_SCREEN:
             renderRadarScreen(state);
             break;
+        case PAUSED:
+            renderPaused();
+            break;
         case MISSION_RESULTS:
             renderMissionResults(state);
             break;
@@ -576,62 +593,98 @@ void renderScreen(const GameState& state) {
 // INPUT HANDLING
 // ============================================================================
 
+static bool keyWasPressed[256] = { false };
+
+void handleContinuousFlightControls(GameState& state, float dt) {
+    if (state.phase != IN_FLIGHT) return;
+
+    if (GetAsyncKeyState('W') & 0x8000)
+        state.aircraft.pitch = std::min(state.aircraft.pitch + 30.0f * dt, 45.0f);
+
+    if (GetAsyncKeyState('S') & 0x8000)
+        state.aircraft.pitch = std::max(state.aircraft.pitch - 30.0f * dt, -45.0f);
+
+    if (GetAsyncKeyState('A') & 0x8000)
+        state.aircraft.roll = std::max(state.aircraft.roll - 45.0f * dt, -90.0f);
+
+    if (GetAsyncKeyState('D') & 0x8000)
+        state.aircraft.roll = std::min(state.aircraft.roll + 45.0f * dt, 90.0f);
+
+    // Gentle roll auto-centering
+    if (!(GetAsyncKeyState('A') & 0x8000) && !(GetAsyncKeyState('D') & 0x8000)) {
+        if (state.aircraft.roll > 0.0f)
+            state.aircraft.roll = std::max(0.0f, state.aircraft.roll - 30.0f * dt);
+        else if (state.aircraft.roll < 0.0f)
+            state.aircraft.roll = std::min(0.0f, state.aircraft.roll + 30.0f * dt);
+    }
+}
+
 bool handleInput(GameState& state) {
-    if (!GetAsyncKeyState(VK_ESCAPE)) {
-        // Non-blocking key check using Windows API
-        for (int key = 0; key < 256; key++) {
-            if (GetAsyncKeyState(key) & 0x8000) {
-                char c = (char)key;
-                c = toupper(c);
-                
-                if (state.phase == MAIN_MENU) {
-                    if (c == 'S') state.phase = MISSION_BRIEFING;
-                    if (c == 'Q') return false;
+    for (int key = 0; key < 256; key++) {
+        bool isPressed = (GetAsyncKeyState(key) & 0x8000) != 0;
+
+        if (isPressed && !keyWasPressed[key]) {
+            char c = (char)key;
+            c = toupper((unsigned char)c);
+
+            if (state.phase == MAIN_MENU) {
+                if (c == 'S') state.phase = MISSION_BRIEFING;
+                if (c == 'Q') return false;
+            }
+            else if (state.phase == MISSION_BRIEFING) {
+                if (c == ' ') {
+                    state.phase = IN_FLIGHT;
+                    state.time_in_flight = 0.0f;
                 }
-                else if (state.phase == MISSION_BRIEFING) {
-                    if (c == ' ') {
-                        state.phase = IN_FLIGHT;
-                        state.time_in_flight = 0;
+                if (c == 'Q') state.phase = MAIN_MENU;
+            }
+            else if (state.phase == IN_FLIGHT) {
+                if (c == 'Q') state.phase = MISSION_RESULTS;
+                if (c == 'P') state.phase = PAUSED;
+                if (c == 'R') state.phase = RADAR_SCREEN;
+
+                if (c == 'F') {
+                    if (state.aircraft.cannon_ammo > 0) {
+                        state.aircraft.cannon_ammo -= 10;
+                        state.mission_score += rand() % 10 + 1;
                     }
                 }
-                else if (state.phase == IN_FLIGHT) {
-                    if (c == 'Q') state.phase = MISSION_RESULTS;
-                    if (c == 'P') state.phase = MISSION_RESULTS;
-                    if (c == 'R') state.phase = RADAR_SCREEN;
-                    if (c == 'W') state.aircraft.pitch = std::min(state.aircraft.pitch + 2.0f, 45.0f);
-                    if (c == 'S') state.aircraft.pitch = std::max(state.aircraft.pitch - 2.0f, -45.0f);
-                    if (c == 'A') state.aircraft.roll = std::max(state.aircraft.roll - 3.0f, -90.0f);
-                    if (c == 'D') state.aircraft.roll = std::min(state.aircraft.roll + 3.0f, 90.0f);
-                    if (c == 'F') {
-                        if (state.aircraft.cannon_ammo > 0) {
-                            state.aircraft.cannon_ammo -= 10;
-                            state.mission_score += rand() % 10 + 1;
+
+                if (c == 'L') {
+                    if (state.contact_count > 0) {
+                        for (int i = 0; i < state.contact_count; i++) {
+                            state.contacts[i].locked = false;
                         }
-                    }
-                    if (c == 'L') {
-                        if (state.contact_count > 0) {
-                            state.selected_contact_idx = (state.selected_contact_idx + 1) % state.contact_count;
-                            state.contacts[state.selected_contact_idx].locked = true;
-                        }
+                        state.selected_contact_idx =
+                            (state.selected_contact_idx + 1) % state.contact_count;
+                        state.contacts[state.selected_contact_idx].locked = true;
                     }
                 }
-                else if (state.phase == RADAR_SCREEN) {
-                    if (c == 'R') state.phase = IN_FLIGHT;
-                    if (c == 'Q') return false;
+            }
+            else if (state.phase == RADAR_SCREEN) {
+                if (c == 'R') state.phase = IN_FLIGHT;
+                if (c == 'Q') return false;
+            }
+            else if (state.phase == PAUSED) {
+                if (c == 'P') state.phase = IN_FLIGHT;
+                if (c == 'Q') state.phase = MISSION_RESULTS;
+            }
+            else if (state.phase == MISSION_RESULTS) {
+                if (c == ' ') {
+                    state.current_mission++;
+                    state.phase = MISSION_BRIEFING;
+                    state.spawnInitialContacts();
+                    state.aircraft = Aircraft();
+                    state.time_in_flight = 0.0f;
+                    state.selected_contact_idx = -1;
                 }
-                else if (state.phase == MISSION_RESULTS) {
-                    if (c == ' ') {
-                        state.current_mission++;
-                        state.phase = MISSION_BRIEFING;
-                        state.spawnInitialContacts();
-                    }
-                    if (c == 'Q') state.phase = MAIN_MENU;
-                }
-                
-                return true;
+                if (c == 'Q') state.phase = MAIN_MENU;
             }
         }
+
+        keyWasPressed[key] = isPressed;
     }
+
     return true;
 }
 
@@ -664,14 +717,17 @@ int main() {
         // Cap dt to game tick
         if (dt > (GAME_TICK_MS / 1000.0f) * 2) dt = GAME_TICK_MS / 1000.0f;
         
-        // Input
+                // Continuous held controls
+        handleContinuousFlightControls(state, dt);
+
+        // Debounced input
         if (!handleInput(state)) break;
         
         // Physics update
         if (state.phase == IN_FLIGHT) {
             updateAircraft(state.aircraft, state.terrain, dt);
             updateContacts(state.contacts, state.contact_count, dt);
-            state.time_in_flight++;
+            state.time_in_flight += dt;
         }
         
         // Render
