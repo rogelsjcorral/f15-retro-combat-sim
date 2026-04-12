@@ -26,6 +26,9 @@ Control and timing cleanup pass for the v1.0 baseline.
 - Fixed persistent multi-target lock state by ensuring only one contact is marked as locked at a time.
 - Fixed state carry-over between missions by resetting aircraft state and selected target index.
 
+### Documentation
+- Updated C++ documentation to reflect v1.1 behavior changes
+
 ### STATUS
 - v1.1 complete.
 - v1.2 scheduled for flight model and physics cleanup.
