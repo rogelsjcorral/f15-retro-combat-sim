@@ -1,4 +1,4 @@
-F-15 STRIKE EAGLE SIMULATOR v1.0
+F-15 STRIKE EAGLE SIMULATOR v1.1
 ================================
 
 DOS-Style Combat Flight Simulator  
