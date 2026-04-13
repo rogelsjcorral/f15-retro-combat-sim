@@ -91,13 +91,15 @@ COPYRIGHT
 Copyright (c) 2026 Rogel S.J. Corral.  
 Licensed under the MIT License.
 
-This project is distributed for educational and modification purposes. Refer to included documentation for usage details.
+This project is distributed for educational and modification purposes.
+Refer to included documentation for usage details.
 
 ---------------------------------------------------------------------
 
 WHAT IS THIS?
 
-This is a retro-style combat flight simulator inspired by MicroProse-era titles such as F-15 Strike Eagle II (1989).
+This is a retro-style combat flight simulator inspired by MicroProse-era
+titles such as F-15 Strike Eagle II (1989).
 
 It is designed to recreate the experience of early flight simulators using:
 
@@ -282,7 +284,8 @@ These include:
 
 FINAL NOTE
 
-This project exists to demonstrate that simulation depth does not require modern graphics or large frameworks.
+This project exists to demonstrate that simulation depth does not require
+modern graphics or large frameworks.
 
 Only structure, discipline, and a clear model.
 
