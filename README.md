@@ -9,6 +9,51 @@ Python and C++ Versions Included
 |                    F-15 STRIKE EAGLE SIMULATOR v1.1                          |
 |                       DOS-STYLE COMBAT FLIGHT SIM                            |
 +------------------------------------------------------------------------------+
+|                         >>> MISSION BRIEFING <<<                             |
++------------------------------------------------------------------------------+
+| MISSION:      GULF PATROL                                                    |
+| OBJECTIVE:    INTERCEPT HOSTILE AIRCRAFT                                     |
+|                                                                              |
+| SITUATION:                                                                   |
+|  - Enemy fighters detected in patrol sector                                  |
+|  - SAM coverage active in target zone                                        |
+|  - Friendly wingman in support                                               |
+|                                                                              |
+| LOADOUT:                                                                     |
+|  - 500 ROUNDS CANNON                                                         |
+|  - 4x AIM-9 (HEAT SEEKING)                                                   |
+|  - 4x AIM-7 (RADAR GUIDED)                                                   |
+|  - 8x AGM-65 (AIR-TO-GROUND)                                                 |
+|  - 12x MK-82 BOMBS                                                           |
++------------------------------------------------------------------------------+
+|                             TACTICAL MAP                                     |
+|                                                                              |
+|        N                                                                     |
+|        ^                                                                     |
+|        |             * BANDIT                                                |
+|   W <--+--> E          \                                                     |
+|        |                \                                                    |
+|        v                 \___ YOU                                            |
+|        S                                                                     |
+|                                                                              |
+|   SAM SITE ▲          WAYPOINT ◆         FRIENDLY ◇                          |
++------------------------------------------------------------------------------+
+| INTEL:                                                                       |
+|  BANDITS: 3 (ESTIMATED)                                                      |
+|  SAM SITES: 2                                                                |
+|  THREAT LEVEL: HIGH                                                          |
++------------------------------------------------------------------------------+
+| PILOT READY                                                                  |
+|                                                                              |
+|   PRESS [SPACE] TO SCRAMBLE                                                  |
+|   PRESS [Q] TO ABORT                                                         |
++------------------------------------------------------------------------------+
+
+```text
++------------------------------------------------------------------------------+
+|                    F-15 STRIKE EAGLE SIMULATOR v1.1                          |
+|                       DOS-STYLE COMBAT FLIGHT SIM                            |
++------------------------------------------------------------------------------+
 | SPD: 384 KT   ALT: 06500 FT   HDG: 020   PITCH: +05   G-FORCE: 1.4           |
 +------------------------------------------------------------------------------+
 |                                                                              |
