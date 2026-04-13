@@ -49,7 +49,6 @@ Python and C++ Versions Included
 |   PRESS [Q] TO ABORT                                                         |
 +------------------------------------------------------------------------------+
 
-```text
 +------------------------------------------------------------------------------+
 |                    F-15 STRIKE EAGLE SIMULATOR v1.1                          |
 |                       DOS-STYLE COMBAT FLIGHT SIM                            |
